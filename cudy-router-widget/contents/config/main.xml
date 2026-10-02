@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <group name="General">
+    <entry name="routerUrl" type="String">
+      <default>https://192.168.10.1</default>
+    </entry>
+    <entry name="password" type="String">
+      <default></default>
+    </entry>
+    <entry name="pollIntervalMs" type="Int">
+      <default>5000</default>
+      <min>1000</min>
+    </entry>
+    <entry name="pythonCommand" type="String">
+      <default>python3</default>
+    </entry>
+  </group>
+</kcfg>
