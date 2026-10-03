@@ -1,0 +1,45 @@
+--- a/contents/code/cudy_fetch.py
++++ b/contents/code/cudy_fetch.py
+@@ -68,6 +68,19 @@
+     return 0
+ 
++QUALITY = ["Very poor", "Poor", "Fair", "Good", "Excellent"]
++
++def wifi_quality(dbm):
++    """Plain-word Wi-Fi quality from a negative dBm value; None if not dBm."""
++    if isinstance(dbm, bool) or not isinstance(dbm, (int, float)) or dbm > 0:
++        return None
++    for limit, label in ((-55, "Excellent"), (-67, "Good"), (-75, "Fair")):
++        if dbm >= limit:
++            return label
++    return "Poor"
++
+ def read_cellular(router, iface):
+@@ -83,6 +96,7 @@
+         "bars": signal_bars(rsrp),
++        "quality": QUALITY[signal_bars(rsrp)] if rsrp is not None else "Unknown",
+     }
+@@ -96,6 +110,7 @@
+         "signal": g("signal_strength"),
++        "signal_label": wifi_quality(g("signal_strength")),
+         "down": g("formatted_bandwidth_down"),
+--- a/contents/ui/main.qml
++++ b/contents/ui/main.qml
+@@ -21,2 +21,2 @@
+-           + ((cellular && !cellular.error) ? "\n" + (cellular.operator || "") + " " + (cellular.net || "") + "  " + cellular.rsrp + " dBm" : ""))
++           + ((cellular && !cellular.error) ? "\n" + (cellular.operator || "") + " " + (cellular.net || "") + "  " + cellular.quality + " signal" : ""))
+@@ -163,4 +163,3 @@
+                 PlasmaComponents3.Label {
+-                    text: root.cellular ? ((root.cellular.ip || "")
+-                                           + (root.cellular.rsrp !== null ? "  ·  RSRP " + root.cellular.rsrp + " dBm" : "")
+-                                           + (root.cellular.sinr !== null ? "  ·  SINR " + root.cellular.sinr + " dB" : "")) : ""
++                    text: root.cellular ? (root.cellular.quality + " signal"
++                                           + (root.cellular.ip ? "  ·  " + root.cellular.ip : "")) : ""
+@@ -216,4 +215,6 @@
+                         text: {
+                             var parts = [modelData.ip || modelData.mac || ""];
+-                            if (modelData.signal !== null && modelData.signal !== undefined)
++                            if (modelData.signal_label)
++                                parts.push(i18n("%1 signal", modelData.signal_label));
++                            else if (modelData.signal !== null && modelData.signal !== undefined)
+                                 parts.push(i18n("signal %1", modelData.signal));

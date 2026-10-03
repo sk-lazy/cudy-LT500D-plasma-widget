@@ -8,12 +8,16 @@ KCM.SimpleKCM {
     property alias cfg_routerUrl: urlField.text
     property alias cfg_password: passwordField.text
     property alias cfg_pollIntervalMs: intervalSpin.value
-    property alias cfg_pythonCommand: pythonField.text
+    property alias cfg_salt: saltField.text
+    property alias cfg_cellularInterface: cellularField.text
+    property alias cfg_showRaw: rawCheck.checked
 
     property string cfg_routerUrlDefault
     property string cfg_passwordDefault
     property int cfg_pollIntervalMsDefault
-    property string cfg_pythonCommandDefault
+    property string cfg_saltDefault
+    property string cfg_cellularInterfaceDefault
+    property bool cfg_showRawDefault
 
     Kirigami.FormLayout {
         QQC2.TextField {
@@ -37,16 +41,33 @@ KCM.SimpleKCM {
             editable: true
         }
         QQC2.TextField {
-            id: pythonField
-            Kirigami.FormData.label: i18n("Python command:")
-            placeholderText: "python3"
+            id: saltField
+            Kirigami.FormData.label: i18n("Login salt:")
+            placeholderText: i18n("auto-discover")
             Layout.minimumWidth: Kirigami.Units.gridUnit * 16
         }
         QQC2.Label {
-            text: i18n("Use a full path (e.g. /home/you/venv/bin/python) if cudypy is installed in a virtualenv.")
+            text: i18n("Leave empty to find it automatically with avahi-browse (package avahi-utils). Or run: avahi-browse -rt _http._tcp and copy the value after salt=")
             wrapMode: Text.Wrap
             opacity: 0.7
             Layout.maximumWidth: Kirigami.Units.gridUnit * 16
+        }
+        QQC2.TextField {
+            id: cellularField
+            Kirigami.FormData.label: i18n("Cellular interface:")
+            placeholderText: "4g"
+            Layout.minimumWidth: Kirigami.Units.gridUnit * 16
+        }
+        QQC2.Label {
+            text: i18n("Lowercase name as the router expects it. Leave empty to hide cellular info.")
+            wrapMode: Text.Wrap
+            opacity: 0.7
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 16
+        }
+        QQC2.CheckBox {
+            id: rawCheck
+            Kirigami.FormData.label: i18n("Debug:")
+            text: i18n("Show raw data of the first device")
         }
     }
 }

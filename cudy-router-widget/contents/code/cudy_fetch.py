@@ -51,6 +51,53 @@ def safe(value):
     return str(value)
 
 
+def to_int(value):
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def signal_bars(rsrp):
+    """0-4 bars from LTE RSRP (dBm)."""
+    if rsrp is None:
+        return 0
+    for limit, bars in ((-85, 4), (-95, 3), (-105, 2), (-115, 1)):
+        if rsrp >= limit:
+            return bars
+    return 0
+
+QUALITY = ["Very poor", "Poor", "Fair", "Good", "Excellent"]
+
+
+def wifi_quality(dbm):
+    """Plain-word Wi-Fi quality from a negative dBm value; None if not dBm."""
+    if isinstance(dbm, bool) or not isinstance(dbm, (int, float)) or dbm > 0:
+        return None
+    for limit, label in ((-55, "Excellent"), (-67, "Good"), (-75, "Fair")):
+        if dbm >= limit:
+            return label
+    return "Poor"
+
+def read_cellular(router, iface):
+    """Whitelisted modem fields only (the raw status also holds IMSI etc.)."""
+    raw = router.call_api("cellular.getstatus", [iface])["result"]
+    if not isinstance(raw, dict):
+        raise ValueError("unexpected cellular status")
+    rsrp = to_int(raw.get("rsrp"))
+    return {
+        "operator": safe(raw.get("reg_status")),
+        "ip": safe(raw.get("inetip")),
+        "net": safe(raw.get("net")),
+        "band": safe(raw.get("band")),
+        "rsrp": rsrp,
+        "rsrq": to_int(raw.get("rsrq")),
+        "sinr": to_int(raw.get("sinr")),
+        "bars": signal_bars(rsrp),
+        "quality": QUALITY[signal_bars(rsrp)] if rsrp is not None else "Unknown",
+    }
+
+
 def device_to_dict(d):
     def g(name):
         return safe(getattr(d, name, None))
@@ -96,6 +143,13 @@ def main():
             )
             try:
                 devices = router.get_devices()
+                cellular = None
+                cell_iface = os.environ.get("CUDY_CELLULAR", "").strip()
+                if cell_iface:
+                    try:
+                        cellular = read_cellular(router, cell_iface)
+                    except Exception as e:  # never let this break the device list
+                        cellular = {"error": f"{type(e).__name__}: {e}"}
                 token, salt = router.auth_token, router.salt  # close() wipes the token
             finally:
                 router.close()
@@ -105,7 +159,7 @@ def main():
             return 1
 
     save_cache(url, token, salt)
-    emit({"ok": True, "devices": [device_to_dict(d) for d in devices]})
+    emit({"ok": True, "devices": [device_to_dict(d) for d in devices], "cellular": cellular})
     return 0
 
 
