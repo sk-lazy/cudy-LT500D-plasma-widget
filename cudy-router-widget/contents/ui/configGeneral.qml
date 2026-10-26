@@ -10,6 +10,8 @@ KCM.SimpleKCM {
     property alias cfg_pollIntervalMs: intervalSpin.value
     property alias cfg_salt: saltField.text
     property alias cfg_cellularInterface: cellularField.text
+    property alias cfg_displayTheme: themeCombo.currentIndex
+    property alias cfg_displayFont: fontField.text
     property alias cfg_showRaw: rawCheck.checked
 
     property string cfg_routerUrlDefault
@@ -17,6 +19,8 @@ KCM.SimpleKCM {
     property int cfg_pollIntervalMsDefault
     property string cfg_saltDefault
     property string cfg_cellularInterfaceDefault
+    property int cfg_displayThemeDefault
+    property string cfg_displayFontDefault
     property bool cfg_showRawDefault
 
     Kirigami.FormLayout {
@@ -60,6 +64,28 @@ KCM.SimpleKCM {
         }
         QQC2.Label {
             text: i18n("Lowercase name as the router expects it. Leave empty to hide cellular info.")
+            wrapMode: Text.Wrap
+            opacity: 0.7
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 16
+        }
+        QQC2.ComboBox {
+            id: themeCombo
+            Kirigami.FormData.label: i18n("Display style:")
+            model: [
+                i18n("System (Plasma theme)"),
+                i18n("LCD - white / blue"),
+                i18n("LCD - orange backlight"),
+                i18n("VFD - cyan glow")
+            ]
+        }
+        QQC2.TextField {
+            id: fontField
+            Kirigami.FormData.label: i18n("Display font:")
+            placeholderText: "monospace"
+            Layout.minimumWidth: Kirigami.Units.gridUnit * 16
+        }
+        QQC2.Label {
+            text: i18n("Any installed font family. A segment font such as DSEG14 Classic gives the real LCD/VFD look. Not used by the System style.")
             wrapMode: Text.Wrap
             opacity: 0.7
             Layout.maximumWidth: Kirigami.Units.gridUnit * 16

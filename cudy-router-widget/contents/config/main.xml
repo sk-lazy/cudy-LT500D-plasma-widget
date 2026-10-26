@@ -19,6 +19,14 @@
     <entry name="cellularInterface" type="String">
       <default>4g</default>
     </entry>
+    <entry name="displayTheme" type="Int">
+      <default>1</default>
+      <min>0</min>
+      <max>3</max>
+    </entry>
+    <entry name="displayFont" type="String">
+      <default>monospace</default>
+    </entry>
     <entry name="showRaw" type="Bool">
       <default>false</default>
     </entry>

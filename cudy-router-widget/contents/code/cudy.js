@@ -109,7 +109,7 @@ function hostFromUrl(url) {
 }
 
 // Router uses a self-signed certificate on https, so TLS verification is
-// skipped (-k), exactly like the Python library did. Proxies are ignored.
+// skipped (-k), as the old Python library did. Proxies are ignored.
 function curlCommand(baseUrl, path, method, params, token) {
     var url = String(baseUrl).trim().replace(/\/+$/, "") + path
             + (token ? "?auth=" + encodeURIComponent(token) : "");
