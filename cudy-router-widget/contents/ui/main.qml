@@ -239,6 +239,11 @@ PlasmoidItem {
                                          : Kirigami.Theme.defaultFont.family
     readonly property int caps: styled ? Font.AllUppercase : Font.MixedCase
     readonly property real letterGap: styled ? 0.6 : 0
+    // font sizes: scaled down in the display styles (segment fonts are wide)
+    readonly property real fs: styled ? Kirigami.Theme.defaultFont.pointSize * Plasmoid.configuration.displayFontScale / 100
+                                      : Kirigami.Theme.defaultFont.pointSize
+    readonly property real fsSmall: styled ? fs * 0.85 : Kirigami.Theme.smallFont.pointSize
+    readonly property real fsHead: styled ? fs * 1.2 : Kirigami.Theme.defaultFont.pointSize * 1.2
 
     // On the desktop the display itself is the widget: no Plasma frame around it
     Plasmoid.backgroundHints: styled ? PlasmaCore.Types.NoBackground : PlasmaCore.Types.DefaultBackground
@@ -336,6 +341,7 @@ PlasmoidItem {
                 Kirigami.Heading {
                     level: 3
                     text: i18n("Devices: %1", root.devices.length)
+                    font.pointSize: root.fsHead
                     font.family: root.fam
                     font.capitalization: root.caps
                     font.letterSpacing: root.letterGap
@@ -345,6 +351,7 @@ PlasmoidItem {
                     text: root.lastUpdate
                     opacity: 0.6
                     font.family: root.fam
+                    font.pointSize: root.fs
                     font.letterSpacing: root.letterGap
                 }
             }
@@ -383,6 +390,7 @@ PlasmoidItem {
                                                + (root.cellular.band ? " " + root.cellular.band : "")) : ""
                         font.bold: true
                         font.family: root.fam
+                        font.pointSize: root.fs
                         font.capitalization: root.caps
                         font.letterSpacing: root.letterGap
                         elide: Text.ElideRight
@@ -393,7 +401,7 @@ PlasmoidItem {
                                                + (root.cellular.ip ? "  ·  " + root.cellular.ip : "")) : ""
                         opacity: 0.7
                         font.family: root.fam
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                        font.pointSize: root.fsSmall
                         font.capitalization: root.caps
                         font.letterSpacing: root.letterGap
                         elide: Text.ElideRight
@@ -403,9 +411,10 @@ PlasmoidItem {
             }
             PlasmaComponents3.Label {
                 visible: root.cellular !== null && !!root.cellular.error
-                text: i18n("Cellular: %1", root.cellular ? root.cellular.error : "")
+                text: (root.cellular && root.cellular.error) ? i18n("Cellular: %1", root.cellular.error) : ""
                 color: Kirigami.Theme.neutralTextColor
                 font.family: root.fam
+                font.pointSize: root.fs
                 font.capitalization: root.caps
                 font.letterSpacing: root.letterGap
                 wrapMode: Text.Wrap
@@ -417,6 +426,7 @@ PlasmoidItem {
                 text: (root.styled ? "! " : "") + root.errorText
                 color: Kirigami.Theme.negativeTextColor
                 font.family: root.fam
+                font.pointSize: root.fs
                 font.bold: root.styled
                 font.capitalization: root.caps
                 font.letterSpacing: root.letterGap
@@ -441,6 +451,7 @@ PlasmoidItem {
                                 text: modelData.name
                                 font.bold: true
                                 font.family: root.fam
+                                font.pointSize: root.fs
                                 font.capitalization: root.caps
                                 font.letterSpacing: root.letterGap
                                 elide: Text.ElideRight
@@ -450,30 +461,44 @@ PlasmoidItem {
                                 text: modelData.type
                                 opacity: 0.7
                                 font.family: root.fam
+                                font.pointSize: root.fs
                                 font.capitalization: root.caps
                                 font.letterSpacing: root.letterGap
                             }
                         }
-                        PlasmaComponents3.Label {
-                            text: {
-                                var parts = [modelData.ip || modelData.mac];
-                                if (modelData.signalLabel)
-                                    parts.push(i18n("%1 signal", modelData.signalLabel));
-                                else if (modelData.signal !== null)
-                                    parts.push(i18n("signal %1", modelData.signal));
-                                if (modelData.down)
-                                    parts.push("↓ " + modelData.down);
-                                if (modelData.up)
-                                    parts.push("↑ " + modelData.up);
-                                return parts.filter(function (p) { return p !== ""; }).join("  ·  ");
-                            }
-                            opacity: 0.7
-                            font.family: root.fam
-                            font.pointSize: Kirigami.Theme.smallFont.pointSize
-                            font.capitalization: root.caps
-                            font.letterSpacing: root.letterGap
-                            elide: Text.ElideRight
+                        RowLayout {
                             Layout.fillWidth: true
+                            spacing: Kirigami.Units.largeSpacing
+                            PlasmaComponents3.Label {
+                                text: {
+                                    var parts = [modelData.ip || modelData.mac];
+                                    if (modelData.signalLabel)
+                                        parts.push(i18n("%1 signal", modelData.signalLabel));
+                                    else if (modelData.signal !== null)
+                                        parts.push(i18n("signal %1", modelData.signal));
+                                    return parts.filter(function (p) { return p !== ""; }).join("  ·  ");
+                                }
+                                opacity: 0.7
+                                font.family: root.fam
+                                font.pointSize: root.fsSmall
+                                font.capitalization: root.caps
+                                font.letterSpacing: root.letterGap
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                            PlasmaComponents3.Label {
+                                visible: text !== ""
+                                text: {
+                                    var rates = [];
+                                    if (modelData.down) rates.push("↓ " + modelData.down);
+                                    if (modelData.up) rates.push("↑ " + modelData.up);
+                                    return rates.join("  ");
+                                }
+                                opacity: 0.7
+                                font.family: root.fam
+                                font.pointSize: root.fsSmall
+                                font.letterSpacing: root.letterGap
+                            }
                         }
                         // thin divider between entries (display styles only)
                         Rectangle {

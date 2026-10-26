@@ -12,6 +12,7 @@ KCM.SimpleKCM {
     property alias cfg_cellularInterface: cellularField.text
     property alias cfg_displayTheme: themeCombo.currentIndex
     property alias cfg_displayFont: fontField.text
+    property alias cfg_displayFontScale: scaleSpin.value
     property alias cfg_showRaw: rawCheck.checked
 
     property string cfg_routerUrlDefault
@@ -21,6 +22,7 @@ KCM.SimpleKCM {
     property string cfg_cellularInterfaceDefault
     property int cfg_displayThemeDefault
     property string cfg_displayFontDefault
+    property int cfg_displayFontScaleDefault
     property bool cfg_showRawDefault
 
     Kirigami.FormLayout {
@@ -89,6 +91,14 @@ KCM.SimpleKCM {
             wrapMode: Text.Wrap
             opacity: 0.7
             Layout.maximumWidth: Kirigami.Units.gridUnit * 16
+        }
+        QQC2.SpinBox {
+            id: scaleSpin
+            Kirigami.FormData.label: i18n("Display font size (%):")
+            from: 40
+            to: 200
+            stepSize: 5
+            editable: true
         }
         QQC2.CheckBox {
             id: rawCheck
