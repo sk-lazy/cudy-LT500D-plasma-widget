@@ -1,9 +1,9 @@
 {
     "KPackageStructure": "Plasma/Applet",
     "KPlugin": {
-        "Authors": [{ "Name": "You" }],
+        "Authors": [{ "sk-lazy": "sk-lazy" }],
         "Category": "System Information",
-        "Description": "Shows devices connected to a Cudy router",
+        "Description": "Shows devices connected to a Cudy LT500D router",
         "Icon": "network-wireless",
         "Id": "org.kde.plasma.cudyrouter",
         "License": "GPL-2.0+",
