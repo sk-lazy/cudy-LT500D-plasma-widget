@@ -245,6 +245,16 @@ function wifiQuality(dbm) {
     return "Poor";
 }
 
+// 0-4 bars from Wi-Fi signal in dBm (-1 = no signal info)
+function wifiBars(dbm) {
+    if (dbm === null) return -1;
+    if (dbm >= -55) return 4;
+    if (dbm >= -67) return 3;
+    if (dbm >= -75) return 2;
+    if (dbm >= -85) return 1;
+    return 0;
+}
+
 // upspeed/downspeed are bytes/s; same units as the Python Device model
 function formatRate(v) {
     if (v === null) return "";
@@ -277,6 +287,7 @@ function mapDevice(rec) {
         type: isWifi ? "wifi" : isEth ? "ethernet" : "",
         signal: signal,
         signalLabel: wifiQuality(signal) || "",
+        bars: wifiBars(signal),
         down: formatRate(nonNegInt(rec.downspeed)),
         up: formatRate(nonNegInt(rec.upspeed)),
         active: inactive === null ? null : inactive < 30
@@ -307,4 +318,80 @@ function mapCellular(raw) {
         bars: bars,
         quality: rsrp === null ? "Unknown" : QUALITY[bars]
     };
+}
+
+// ---------------------------------------------------------------- device tracking (session only)
+
+function formatAgo(ms) {
+    var s = Math.max(0, Math.floor(ms / 1000));
+    if (s < 10) return "just now";
+    if (s < 60) return s + " s ago";
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + " min ago";
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + " h " + (m % 60) + " min ago";
+    return Math.floor(h / 24) + " d " + (h % 24) + " h ago";
+}
+
+function deviceKey(d) {
+    return d.mac || d.ip || d.name;
+}
+
+// Copy the rows of a ListModel into plain objects
+function modelRows(model) {
+    var out = [];
+    for (var i = 0; i < model.count; i++) {
+        var r = model.get(i);
+        out.push({ key: r.key, name: r.name, ip: r.ip, mac: r.mac, type: r.type,
+                   down: r.down, up: r.up, bars: r.bars, present: r.present,
+                   lastSeen: r.lastSeen, flashUntil: r.flashUntil });
+    }
+    return out;
+}
+
+// prev: rows currently in the model, list: freshly mapped devices.
+// Present devices come first (router order), vanished ones after, most recently seen first.
+// A device that is new (or came back) gets flashUntil = now + flashMs, but only once
+// `started` is true, so the very first poll does not flash the whole list.
+function planDevices(prev, list, now, started, flashMs) {
+    var old = {}, i;
+    for (i = 0; i < prev.length; i++) old[prev[i].key] = prev[i];
+
+    var present = [], current = {};
+    for (i = 0; i < list.length; i++) {
+        var d = list[i], key = deviceKey(d);
+        if (current[key]) continue;   // duplicate entry in the router list
+        current[key] = true;
+        var o = old[key];
+        var flash = o ? o.flashUntil : 0;
+        if (started && (!o || !o.present)) flash = now + (flashMs || 3000);
+        present.push({ key: key, name: d.name, ip: d.ip, mac: d.mac, type: d.type,
+                       down: d.down, up: d.up, bars: d.bars, present: true, lastSeen: now, flashUntil: flash });
+    }
+    var gone = [];
+    for (i = 0; i < prev.length; i++) {
+        var p = prev[i];
+        if (current[p.key]) continue;
+        gone.push({ key: p.key, name: p.name, ip: p.ip, mac: p.mac, type: p.type,
+                    down: "", up: "", bars: p.bars, present: false, lastSeen: p.lastSeen, flashUntil: p.flashUntil });
+    }
+    gone.sort(function (a, b) { return b.lastSeen - a.lastSeen; });
+    return { rows: present.concat(gone), present: present.length, gone: gone.length };
+}
+
+// Update a ListModel in place (keeps delegates, animations and scroll position alive)
+function reconcile(model, rows) {
+    for (var i = 0; i < rows.length; i++) {
+        var row = rows[i], j = -1;
+        for (var k = i; k < model.count; k++) {
+            if (model.get(k).key === row.key) { j = k; break; }
+        }
+        if (j === -1) { model.insert(i, row); continue; }
+        if (j !== i) model.move(j, i, 1);
+        var cur = model.get(i);
+        for (var f in row) {
+            if (cur[f] !== row[f]) model.setProperty(i, f, row[f]);
+        }
+    }
+    while (model.count > rows.length) model.remove(model.count - 1);
 }

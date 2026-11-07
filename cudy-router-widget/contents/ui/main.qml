@@ -14,7 +14,11 @@ PlasmoidItem {
     readonly property string authPath: "/cgi-bin/luci/rpc/auth"
     readonly property string apiPath: "/cgi-bin/luci/rpc/app"
 
-    property var devices: []
+    property int presentCount: 0
+    property int absentCount: 0
+    property bool paused: false            // header button; session only
+    property bool trackingStarted: false   // false until the first successful poll
+    property double now: Date.now()        // ticks every second, drives "last seen" texts
     property var cellular: null
     property string rawSample: ""
     property string errorText: ""
@@ -30,7 +34,7 @@ PlasmoidItem {
 
     toolTipMainText: i18n("Cudy Router")
     toolTipSubText: errorText !== "" ? errorText
-        : (i18n("%1 devices", devices.length)
+        : (i18n("%1 devices", presentCount)
            + ((cellular && !cellular.error) ? "\n" + cellular.operator + " " + cellular.net + "  " + cellular.quality + " signal" : ""))
 
     // ------------------------------------------------------------ plumbing
@@ -158,7 +162,7 @@ PlasmoidItem {
                 return;
             }
             fetchCellular(function (cell) {
-                devices = r.records.map(function (rec) { return Cudy.mapDevice(rec); });
+                syncDevices(r.records.map(function (rec) { return Cudy.mapDevice(rec); }));
                 rawSample = (Plasmoid.configuration.showRaw && r.records.length > 0)
                             ? JSON.stringify(r.records[0], null, 2) : "";
                 cellular = cell;
@@ -169,7 +173,19 @@ PlasmoidItem {
         });
     }
 
+    ListModel { id: deviceModel }
+
+    // Session-only tracking: devices that vanish stay in the list (greyed out)
+    function syncDevices(list) {
+        var plan = Cudy.planDevices(Cudy.modelRows(deviceModel), list, Date.now(), trackingStarted, 3000);
+        Cudy.reconcile(deviceModel, plan.rows);
+        presentCount = plan.present;
+        absentCount = plan.gone;
+        trackingStarted = true;
+    }
+
     function poll() {
+        if (paused) return;
         // Skip while a cycle is running (give up on it after 60 s)
         if (busy && (Date.now() - busySince) < 60000) return;
         var cfg = Plasmoid.configuration;
@@ -209,10 +225,17 @@ PlasmoidItem {
 
     Timer {
         interval: Math.max(1000, Plasmoid.configuration.pollIntervalMs)
-        running: true
+        running: !root.paused   // resuming fires immediately (triggeredOnStart)
         repeat: true
         triggeredOnStart: true   // connect + fetch as soon as the widget loads
         onTriggered: root.poll()
+    }
+
+    Timer {
+        interval: 1000
+        running: root.absentCount > 0
+        repeat: true
+        onTriggered: root.now = Date.now()
     }
 
     Connections {
@@ -227,9 +250,9 @@ PlasmoidItem {
     // Display styles: 0 = Plasma theme, 1 = LCD white/blue, 2 = LCD orange backlight, 3 = VFD
     readonly property var palettes: [
         null,
-        { top: "#eaf2fc", bottom: "#c9dcf0", ink: "#1a2a45", bezel: "#43546e", ghost: 0.10, glass: 0.40, glow: false },
-        { top: "#ffb84f", bottom: "#ff8710", ink: "#2b1300", bezel: "#5c2d00", ghost: 0.14, glass: 0.20, glow: false },
-        { top: "#04150f", bottom: "#020f0c", ink: "#7bf5dc", bezel: "#0d2e28", ghost: 0.10, glass: 0.06, glow: true }
+        { bg: "#dcebfa", ink: "#050f1f", bezel: "#2c3b52", ghost: 0.10, glass: 0.0, glow: false },
+        { bg: "#ff9b1f", ink: "#120700", bezel: "#4a2400", ghost: 0.14, glass: 0.0, glow: false },
+        { bg: "#030a14", ink: "#78d6ff", bezel: "#0c2234", ghost: 0.10, glass: 0.05, glow: true }
     ]
     readonly property bool styled: Plasmoid.configuration.displayTheme > 0
                                    && Plasmoid.configuration.displayTheme < palettes.length
@@ -257,7 +280,7 @@ PlasmoidItem {
         PlasmaComponents3.Label {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            text: root.devices.length
+            text: root.presentCount
             font.bold: true
             visible: root.errorText === ""
         }
@@ -273,7 +296,7 @@ PlasmoidItem {
         Kirigami.Theme.textColor: root.ink
         Kirigami.Theme.negativeTextColor: root.ink
         Kirigami.Theme.neutralTextColor: root.ink
-        Kirigami.Theme.backgroundColor: root.pal ? root.pal.bottom : Kirigami.Theme.backgroundColor
+        Kirigami.Theme.backgroundColor: root.pal ? root.pal.bg : Kirigami.Theme.backgroundColor
 
         // --- display glass ---------------------------------------------------
         Rectangle {
@@ -283,10 +306,7 @@ PlasmoidItem {
             radius: 6
             border.width: 2
             border.color: root.pal ? root.pal.bezel : "transparent"
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: root.pal ? root.pal.top : "transparent" }
-                GradientStop { position: 1.0; color: root.pal ? root.pal.bottom : "transparent" }
-            }
+            color: root.pal ? root.pal.bg : "transparent"
         }
         // inner bezel shadow
         Rectangle {
@@ -306,7 +326,7 @@ PlasmoidItem {
             y: 3
             width: parent.width - 6
             height: parent.height * 0.45
-            visible: root.styled
+            visible: root.styled && root.pal.glass > 0
             radius: 4
             gradient: Gradient {
                 GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, root.pal ? root.pal.glass : 0) }
@@ -340,7 +360,8 @@ PlasmoidItem {
                 Layout.fillWidth: true
                 Kirigami.Heading {
                     level: 3
-                    text: i18n("Devices: %1", root.devices.length)
+                    text: i18n("Devices: %1", root.presentCount)
+                          + (root.absentCount > 0 ? "  (" + i18n("%1 gone", root.absentCount) + ")" : "")
                     font.pointSize: root.fsHead
                     font.family: root.fam
                     font.capitalization: root.caps
@@ -348,11 +369,32 @@ PlasmoidItem {
                     Layout.fillWidth: true
                 }
                 PlasmaComponents3.Label {
-                    text: root.lastUpdate
-                    opacity: 0.6
+                    text: root.paused ? i18n("paused") : root.lastUpdate
+                    opacity: root.styled ? 0.9 : 0.6
                     font.family: root.fam
                     font.pointSize: root.fs
                     font.letterSpacing: root.letterGap
+                }
+                MouseArea {
+                    id: pauseButton
+                    implicitWidth: Kirigami.Units.gridUnit * 1.2
+                    implicitHeight: Kirigami.Units.gridUnit * 1.2
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    opacity: containsMouse ? 1.0 : 0.7
+                    onClicked: root.paused = !root.paused
+
+                    Kirigami.Icon {
+                        anchors.fill: parent
+                        anchors.margins: 2
+                        source: root.paused ? "media-playback-start" : "media-playback-pause"
+                        isMask: true                       // draw in the display's ink colour
+                        color: Kirigami.Theme.textColor
+                    }
+                    PlasmaComponents3.ToolTip {
+                        visible: pauseButton.containsMouse
+                        text: root.paused ? i18n("Resume updates") : i18n("Pause updates")
+                    }
                 }
             }
 
@@ -399,7 +441,7 @@ PlasmoidItem {
                     PlasmaComponents3.Label {
                         text: root.cellular ? (root.cellular.quality + " signal"
                                                + (root.cellular.ip ? "  ·  " + root.cellular.ip : "")) : ""
-                        opacity: 0.7
+                        opacity: root.styled ? 0.9 : 0.7
                         font.family: root.fam
                         font.pointSize: root.fsSmall
                         font.capitalization: root.caps
@@ -439,75 +481,176 @@ PlasmoidItem {
                 Layout.fillHeight: true
 
                 ListView {
-                    model: root.devices
+                    model: deviceModel
                     clip: true
                     spacing: Kirigami.Units.smallSpacing
-                    delegate: ColumnLayout {
+                    delegate: Item {
+                        id: row
                         width: ListView.view.width
-                        spacing: 0
-                        RowLayout {
-                            Layout.fillWidth: true
-                            PlasmaComponents3.Label {
-                                text: modelData.name
-                                font.bold: true
-                                font.family: root.fam
-                                font.pointSize: root.fs
-                                font.capitalization: root.caps
-                                font.letterSpacing: root.letterGap
-                                elide: Text.ElideRight
-                                Layout.fillWidth: true
-                            }
-                            PlasmaComponents3.Label {
-                                text: modelData.type
-                                opacity: 0.7
-                                font.family: root.fam
-                                font.pointSize: root.fs
-                                font.capitalization: root.caps
-                                font.letterSpacing: root.letterGap
+                        height: rowContent.implicitHeight
+
+                        // vanished devices stay listed, greyed out
+                        opacity: model.present ? 1.0 : 0.4
+                        Behavior on opacity { NumberAnimation { duration: 400 } }
+
+                        // flash: three inverted-colour blinks when a device appears
+                        property bool inverted: false
+                        property int blinkLeft: 0
+                        property double flashUntil: model.flashUntil
+                        property int bars: model.bars   // -1 = wired / unknown
+                        property bool wired: model.type === "ethernet"
+                        function flash() {
+                            inverted = true;
+                            blinkLeft = 5;   // 5 toggles: on, off, on, off, on, off
+                        }
+                        onFlashUntilChanged: if (flashUntil > Date.now()) flash()
+                        Component.onCompleted: if (flashUntil > Date.now()) flash()
+                        Timer {
+                            interval: 250
+                            repeat: true
+                            running: row.blinkLeft > 0
+                            onTriggered: {
+                                row.inverted = !row.inverted;
+                                row.blinkLeft--;
                             }
                         }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: Kirigami.Units.largeSpacing
-                            PlasmaComponents3.Label {
-                                text: {
-                                    var parts = [modelData.ip || modelData.mac];
-                                    if (modelData.signalLabel)
-                                        parts.push(i18n("%1 signal", modelData.signalLabel));
-                                    else if (modelData.signal !== null)
-                                        parts.push(i18n("signal %1", modelData.signal));
-                                    return parts.filter(function (p) { return p !== ""; }).join("  ·  ");
-                                }
-                                opacity: 0.7
-                                font.family: root.fam
-                                font.pointSize: root.fsSmall
-                                font.capitalization: root.caps
-                                font.letterSpacing: root.letterGap
-                                elide: Text.ElideRight
-                                Layout.fillWidth: true
-                            }
-                            PlasmaComponents3.Label {
-                                visible: text !== ""
-                                text: {
-                                    var rates = [];
-                                    if (modelData.down) rates.push("↓ " + modelData.down);
-                                    if (modelData.up) rates.push("↑ " + modelData.up);
-                                    return rates.join("  ");
-                                }
-                                opacity: 0.7
-                                font.family: root.fam
-                                font.pointSize: root.fsSmall
-                                font.letterSpacing: root.letterGap
-                            }
-                        }
-                        // thin divider between entries (display styles only)
                         Rectangle {
-                            visible: root.styled
-                            Layout.fillWidth: true
-                            Layout.topMargin: 2
-                            height: 1
+                            anchors.fill: parent
+                            visible: row.inverted
                             color: Kirigami.Theme.textColor
-                            opacity: 0.15
+                        }
+
+                        ColumnLayout {
+                            id: rowContent
+                            width: parent.width
+                            spacing: 0
+                            RowLayout {
+                                Layout.fillWidth: true
+                                PlasmaComponents3.Label {
+                                    text: model.name
+                                    color: row.inverted ? Kirigami.Theme.backgroundColor : Kirigami.Theme.textColor
+                                    font.bold: true
+                                    font.pointSize: root.fs
+                                    font.family: root.fam
+                                    font.capitalization: root.caps
+                                    font.letterSpacing: root.letterGap
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                                PlasmaComponents3.Label {
+                                    text: model.type
+                                    color: row.inverted ? Kirigami.Theme.backgroundColor : Kirigami.Theme.textColor
+                                    opacity: root.styled ? 0.9 : 0.7
+                                    font.pointSize: root.fs
+                                    font.family: root.fam
+                                    font.capitalization: root.caps
+                                    font.letterSpacing: root.letterGap
+                                }
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: Kirigami.Units.largeSpacing
+                                // Status slot: Wi-Fi signal bars, or an Ethernet port for wired clients.
+                                // Always occupies the same space so IPs line up between rows.
+                                Item {
+                                    implicitWidth: barsRow.implicitWidth
+                                    implicitHeight: barsRow.implicitHeight
+                                    Layout.alignment: Qt.AlignVCenter
+
+                                    Row {
+                                        id: barsRow
+                                        spacing: 2
+                                        opacity: (model.present && row.bars >= 0) ? 1 : 0
+                                        Repeater {
+                                            model: 4
+                                            Item {
+                                                width: Kirigami.Units.smallSpacing
+                                                height: Kirigami.Units.gridUnit * 0.8
+                                                Rectangle {
+                                                    anchors.bottom: parent.bottom
+                                                    width: parent.width
+                                                    height: parent.height * (index + 1) / 4
+                                                    radius: root.styled ? 0 : 1
+                                                    color: row.inverted ? Kirigami.Theme.backgroundColor : Kirigami.Theme.textColor
+                                                    opacity: index < row.bars ? 1.0 : (root.pal ? root.pal.ghost : 0.25)
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Ethernet port (RJ45 front view): latch on top, frame, four contacts
+                                    Item {
+                                        id: ethIcon
+                                        anchors.fill: parent
+                                        opacity: (model.present && row.wired && row.bars < 0) ? 1 : 0
+                                        readonly property color ink: row.inverted ? Kirigami.Theme.backgroundColor
+                                                                                  : Kirigami.Theme.textColor
+                                        Rectangle {          // latch
+                                            x: (parent.width - width) / 2
+                                            width: parent.width * 0.4
+                                            height: 2
+                                            color: ethIcon.ink
+                                        }
+                                        Rectangle {          // frame
+                                            anchors.bottom: parent.bottom
+                                            width: parent.width
+                                            height: parent.height - 3
+                                            color: "transparent"
+                                            border.width: 1
+                                            border.color: ethIcon.ink
+                                            Row {            // contacts
+                                                anchors.centerIn: parent
+                                                spacing: 2
+                                                Repeater {
+                                                    model: 4
+                                                    Rectangle {
+                                                        width: 1
+                                                        height: Math.max(3, ethIcon.height * 0.35)
+                                                        color: ethIcon.ink
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                PlasmaComponents3.Label {
+                                    text: (model.ip || model.mac)
+                                          + (model.present
+                                             ? ((row.bars >= 0 || row.wired) ? "" : "  ·  " + i18n("online"))
+                                             : "  ·  " + i18n("last seen %1", Cudy.formatAgo(root.now - model.lastSeen)))
+                                    color: row.inverted ? Kirigami.Theme.backgroundColor : Kirigami.Theme.textColor
+                                    opacity: root.styled ? 0.9 : 0.7
+                                    font.family: root.fam
+                                    font.pointSize: root.fsSmall
+                                    font.capitalization: root.caps
+                                    font.letterSpacing: root.letterGap
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                                PlasmaComponents3.Label {
+                                    visible: text !== ""
+                                    text: {
+                                        var rates = [];
+                                        if (model.down) rates.push("↓ " + model.down);
+                                        if (model.up) rates.push("↑ " + model.up);
+                                        return rates.join("  ");
+                                    }
+                                    color: row.inverted ? Kirigami.Theme.backgroundColor : Kirigami.Theme.textColor
+                                    opacity: root.styled ? 0.9 : 0.7
+                                    font.family: root.fam
+                                    font.pointSize: root.fsSmall
+                                    font.letterSpacing: root.letterGap
+                                }
+                            }
+                            // thin divider between entries (display styles only)
+                            Rectangle {
+                                visible: root.styled
+                                Layout.fillWidth: true
+                                Layout.topMargin: 2
+                                height: 1
+                                color: Kirigami.Theme.textColor
+                                opacity: 0.15
+                            }
                         }
                     }
                 }
