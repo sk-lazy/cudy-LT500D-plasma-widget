@@ -13,6 +13,7 @@ KCM.SimpleKCM {
     property alias cfg_displayTheme: themeCombo.currentIndex
     property alias cfg_displayFont: fontField.text
     property alias cfg_displayFontScale: scaleSpin.value
+    property alias cfg_transparentBackground: transparentCheck.checked   // [TRANSPARENT-BG]
     property alias cfg_showRaw: rawCheck.checked
 
     property string cfg_routerUrlDefault
@@ -23,6 +24,7 @@ KCM.SimpleKCM {
     property int cfg_displayThemeDefault
     property string cfg_displayFontDefault
     property int cfg_displayFontScaleDefault
+    property bool cfg_transparentBackgroundDefault   // [TRANSPARENT-BG]
     property bool cfg_showRawDefault
 
     Kirigami.FormLayout {
@@ -100,6 +102,13 @@ KCM.SimpleKCM {
             stepSize: 5
             editable: true
         }
+        // [TRANSPARENT-BG] begin - remove this block to drop the option
+        QQC2.CheckBox {
+            id: transparentCheck
+            Kirigami.FormData.label: i18n("Background:")
+            text: i18n("Transparent background")
+        }
+        // [TRANSPARENT-BG] end
         QQC2.CheckBox {
             id: rawCheck
             Kirigami.FormData.label: i18n("Debug:")

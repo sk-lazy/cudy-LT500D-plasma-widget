@@ -8,7 +8,7 @@
         "Id": "org.kde.plasma.cudyrouter",
         "License": "GPL-2.0+",
         "Name": "Cudy Router",
-        "Version": "0.3"
+        "Version": "0.4"
     },
     "X-Plasma-API-Minimum-Version": "6.0"
 }

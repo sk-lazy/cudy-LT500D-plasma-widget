@@ -17,6 +17,7 @@ PlasmoidItem {
     property int presentCount: 0
     property int absentCount: 0
     property bool paused: false            // header button; session only
+    property bool manualRefresh: false     // true after a click on the refresh button
     property bool trackingStarted: false   // false until the first successful poll
     property double now: Date.now()        // ticks every second, drives "last seen" texts
     property var cellular: null
@@ -31,6 +32,8 @@ PlasmoidItem {
     property string discoveredSalt: ""
     property int seq: 0
     property var pending: ({})
+
+    onBusyChanged: if (!busy) manualRefresh = false   // stop the spinning refresh icon
 
     toolTipMainText: i18n("Cudy Router")
     toolTipSubText: errorText !== "" ? errorText
@@ -184,8 +187,9 @@ PlasmoidItem {
         trackingStarted = true;
     }
 
-    function poll() {
-        if (paused) return;
+    // force = true: a manual refresh, works even while paused
+    function poll(force) {
+        if (paused && !force) return;
         // Skip while a cycle is running (give up on it after 60 s)
         if (busy && (Date.now() - busySince) < 60000) return;
         var cfg = Plasmoid.configuration;
@@ -268,8 +272,12 @@ PlasmoidItem {
     readonly property real fsSmall: styled ? fs * 0.85 : Kirigami.Theme.smallFont.pointSize
     readonly property real fsHead: styled ? fs * 1.2 : Kirigami.Theme.defaultFont.pointSize * 1.2
 
+    // [TRANSPARENT-BG] when set, the display panel (and the Plasma frame) is not drawn at all
+    readonly property bool clearPanel: Plasmoid.configuration.transparentBackground
+
     // On the desktop the display itself is the widget: no Plasma frame around it
-    Plasmoid.backgroundHints: styled ? PlasmaCore.Types.NoBackground : PlasmaCore.Types.DefaultBackground
+    Plasmoid.backgroundHints: (styled || clearPanel)   // [TRANSPARENT-BG] (drop '|| clearPanel' to remove)
+                              ? PlasmaCore.Types.NoBackground : PlasmaCore.Types.DefaultBackground
 
     compactRepresentation: MouseArea {
         onClicked: root.expanded = !root.expanded
@@ -302,7 +310,7 @@ PlasmoidItem {
         Rectangle {
             z: -3
             anchors.fill: parent
-            visible: root.styled
+            visible: root.styled && !root.clearPanel   // [TRANSPARENT-BG]
             radius: 6
             border.width: 2
             border.color: root.pal ? root.pal.bezel : "transparent"
@@ -313,7 +321,7 @@ PlasmoidItem {
             z: -2
             anchors.fill: parent
             anchors.margins: 3
-            visible: root.styled
+            visible: root.styled && !root.clearPanel   // [TRANSPARENT-BG]
             radius: 4
             color: "transparent"
             border.width: 1
@@ -326,7 +334,7 @@ PlasmoidItem {
             y: 3
             width: parent.width - 6
             height: parent.height * 0.45
-            visible: root.styled && root.pal.glass > 0
+            visible: root.styled && root.pal.glass > 0 && !root.clearPanel   // [TRANSPARENT-BG]
             radius: 4
             gradient: Gradient {
                 GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, root.pal ? root.pal.glass : 0) }
@@ -368,6 +376,41 @@ PlasmoidItem {
                     font.letterSpacing: root.letterGap
                     Layout.fillWidth: true
                 }
+                // Manual refresh: fetch right now, even if the interval is long or updates are paused
+                MouseArea {
+                    id: refreshButton
+                    implicitWidth: Kirigami.Units.gridUnit * 1.2
+                    implicitHeight: Kirigami.Units.gridUnit * 1.2
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    opacity: containsMouse ? 1.0 : 0.7
+                    onClicked: {
+                        root.manualRefresh = true;
+                        root.poll(true);
+                    }
+
+                    Kirigami.Icon {
+                        id: refreshIcon
+                        anchors.fill: parent
+                        anchors.margins: 2
+                        source: "view-refresh"
+                        isMask: true                       // draw in the display's ink colour
+                        color: Kirigami.Theme.textColor
+                        // spin while a manual refresh is running
+                        NumberAnimation on rotation {
+                            from: 0
+                            to: 360
+                            duration: 800
+                            loops: Animation.Infinite
+                            running: root.busy && root.manualRefresh
+                            onRunningChanged: if (!running) refreshIcon.rotation = 0
+                        }
+                    }
+                    PlasmaComponents3.ToolTip {
+                        visible: refreshButton.containsMouse
+                        text: i18n("Refresh now")
+                    }
+                }
                 PlasmaComponents3.Label {
                     text: root.paused ? i18n("paused") : root.lastUpdate
                     opacity: root.styled ? 0.9 : 0.6
@@ -402,6 +445,7 @@ PlasmoidItem {
             RowLayout {
                 visible: root.cellular !== null && !root.cellular.error
                 Layout.fillWidth: true
+                Layout.bottomMargin: 5    // extra gap (px) between the cellular block and the device list
                 spacing: Kirigami.Units.largeSpacing
 
                 Row {
@@ -493,31 +537,29 @@ PlasmoidItem {
                         opacity: model.present ? 1.0 : 0.4
                         Behavior on opacity { NumberAnimation { duration: 400 } }
 
-                        // flash: three inverted-colour blinks when a device appears
-                        property bool inverted: false
-                        property int blinkLeft: 0
+                        // New-device flash: the row fades from nothing up to full brightness and
+                        // back, a few times, then stays visible. Tune the speed / count here:
+                        readonly property int flashCount: 3      // number of pulses
+                        readonly property int flashRiseMs: 350   // fade in  (nothing -> full)
+                        readonly property int flashFallMs: 350   // fade out (full -> nothing)
+
                         property double flashUntil: model.flashUntil
                         property int bars: model.bars   // -1 = wired / unknown
                         property bool wired: model.type === "ethernet"
                         function flash() {
-                            inverted = true;
-                            blinkLeft = 5;   // 5 toggles: on, off, on, off, on, off
+                            pulse.restart();
                         }
                         onFlashUntilChanged: if (flashUntil > Date.now()) flash()
                         Component.onCompleted: if (flashUntil > Date.now()) flash()
-                        Timer {
-                            interval: 250
-                            repeat: true
-                            running: row.blinkLeft > 0
-                            onTriggered: {
-                                row.inverted = !row.inverted;
-                                row.blinkLeft--;
+                        SequentialAnimation {
+                            id: pulse
+                            PropertyAction { target: rowContent; property: "opacity"; value: 0 }   // start from nothing
+                            SequentialAnimation {
+                                loops: row.flashCount
+                                NumberAnimation { target: rowContent; property: "opacity"; to: 1; duration: row.flashRiseMs }
+                                NumberAnimation { target: rowContent; property: "opacity"; to: 0; duration: row.flashFallMs }
                             }
-                        }
-                        Rectangle {
-                            anchors.fill: parent
-                            visible: row.inverted
-                            color: Kirigami.Theme.textColor
+                            NumberAnimation { target: rowContent; property: "opacity"; to: 1; duration: row.flashRiseMs }   // settle visible
                         }
 
                         ColumnLayout {
@@ -528,7 +570,7 @@ PlasmoidItem {
                                 Layout.fillWidth: true
                                 PlasmaComponents3.Label {
                                     text: model.name
-                                    color: row.inverted ? Kirigami.Theme.backgroundColor : Kirigami.Theme.textColor
+                                    color: Kirigami.Theme.textColor
                                     font.bold: true
                                     font.pointSize: root.fs
                                     font.family: root.fam
@@ -539,7 +581,7 @@ PlasmoidItem {
                                 }
                                 PlasmaComponents3.Label {
                                     text: model.type
-                                    color: row.inverted ? Kirigami.Theme.backgroundColor : Kirigami.Theme.textColor
+                                    color: Kirigami.Theme.textColor
                                     opacity: root.styled ? 0.9 : 0.7
                                     font.pointSize: root.fs
                                     font.family: root.fam
@@ -571,7 +613,7 @@ PlasmoidItem {
                                                     width: parent.width
                                                     height: parent.height * (index + 1) / 4
                                                     radius: root.styled ? 0 : 1
-                                                    color: row.inverted ? Kirigami.Theme.backgroundColor : Kirigami.Theme.textColor
+                                                    color: Kirigami.Theme.textColor
                                                     opacity: index < row.bars ? 1.0 : (root.pal ? root.pal.ghost : 0.25)
                                                 }
                                             }
@@ -583,8 +625,7 @@ PlasmoidItem {
                                         id: ethIcon
                                         anchors.fill: parent
                                         opacity: (model.present && row.wired && row.bars < 0) ? 1 : 0
-                                        readonly property color ink: row.inverted ? Kirigami.Theme.backgroundColor
-                                                                                  : Kirigami.Theme.textColor
+                                        readonly property color ink: Kirigami.Theme.textColor
                                         Rectangle {          // latch
                                             x: (parent.width - width) / 2
                                             width: parent.width * 0.4
@@ -618,7 +659,7 @@ PlasmoidItem {
                                           + (model.present
                                              ? ((row.bars >= 0 || row.wired) ? "" : "  ·  " + i18n("online"))
                                              : "  ·  " + i18n("last seen %1", Cudy.formatAgo(root.now - model.lastSeen)))
-                                    color: row.inverted ? Kirigami.Theme.backgroundColor : Kirigami.Theme.textColor
+                                    color: Kirigami.Theme.textColor
                                     opacity: root.styled ? 0.9 : 0.7
                                     font.family: root.fam
                                     font.pointSize: root.fsSmall
@@ -635,7 +676,7 @@ PlasmoidItem {
                                         if (model.up) rates.push("↑ " + model.up);
                                         return rates.join("  ");
                                     }
-                                    color: row.inverted ? Kirigami.Theme.backgroundColor : Kirigami.Theme.textColor
+                                    color: Kirigami.Theme.textColor
                                     opacity: root.styled ? 0.9 : 0.7
                                     font.family: root.fam
                                     font.pointSize: root.fsSmall
